@@ -16,7 +16,7 @@ requests>=1.1
 Routes>=1.12.3
 SQLAlchemy>=0.7.8,<=0.9.99
 WebOb>=1.2.3
-python-heatclient>=0.2.3
+-e git://github.com/savi-dev/python-heatclient.git@0.2.8#egg=python-heatclient
 python-keystoneclient>=0.7.0
 python-swiftclient>=1.6
 python-neutronclient>=2.3.4,<3
