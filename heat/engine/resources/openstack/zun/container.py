@@ -12,6 +12,8 @@
 #    under the License.
 
 from heat.common.i18n import _
+from heat.common import exception
+from heat.engine import attributes
 from heat.engine import clients
 from heat.engine import constraints
 from heat.engine import properties
@@ -78,17 +80,13 @@ class Container(resource.Resource):
             _('The policy which determines if the image should'
               'be pulled prior to starting the container. '),
             constraints=[
-                constraints.AllowedValues(['IFNOTPRESENT', 'ALWAYS',
-                                           'NEVER']),
+                constraints.AllowedValues(['ifnotpresent', 'always',
+                                           'never']),
             ]
         ),
         RESTART_POLICY: properties.Schema(
-            properties.Schema.STRING,
+            properties.Schema.MAP,
             _('Restart policy to apply when a container exits'),
-            constraints=[
-                constraints.AllowedValues(['NO', 'ON-FAILURE',
-                                           'ALWAYS', 'UNLESS-STOPPED']),
-            ]
         ),
         TTY: properties.Schema(
             properties.Schema.BOOLEAN,
@@ -102,17 +100,48 @@ class Container(resource.Resource):
             properties.Schema.STRING,
             _('The image driver to use to pull container image. '),
             constraints=[
-                constraints.AllowedValues(['DOCKER',
-                                           'GLANCE']),
+                constraints.AllowedValues(['docker',
+                                           'glance']),
             ]
 
         ),
 
     }
 
+    ATTRIBUTES = (
+        ADDRESSES
+    ) = (
+        'addresses'
+    )
+
+    attributes_schema = {
+        ADDRESSES: attributes.Schema(
+            _('A dict of all network addresses with corresponding port_id. '
+              'Each network will have two keys in dict, they are network '
+              'name and network id. '
+              'The port ID may be obtained through the following expression: '
+              '"{get_attr: [<container>, addresses, <network name_or_id>, 0, '
+              'port]}".'),
+            type=attributes.Schema.MAP
+        )
+    }
+
     default_client_name = 'zun'
 
     entity = 'containers'
+
+    def _resolve_attribute(self, name):
+        print("22222222222222")
+        if self.resource_id is None:
+            return
+        try:
+            container = self.client().containers.get(self.resource_id)
+        except Exception as e:
+            self.client_plugin().ignore_not_found(e)
+            return ''
+        if name == self.ADDRESSES:
+            print("container: " + repr(container))
+            return getattr(container, 'addresses', {})
 
     def handle_create(self):
         args = dict((k, v) for k, v in self.properties.items()
@@ -120,6 +149,27 @@ class Container(resource.Resource):
         container = self.client().containers.run(**args)
         self.resource_id_set(container.uuid)
         return container.uuid
+
+    def check_create_complete(self, id):
+        print("111111111111")
+        container = self.client().containers.get(id)
+        if container.status == 'Creating':
+            return False
+        elif container.status is None:
+            return False
+        elif container.status in ('Running', 'Created'):
+            print("container: " + repr(container))
+            return True
+        elif container.status == 'Error':
+            msg = (_("Failed to create Container '%(name)s' - %(reason)s")
+                   % {'name': self.name, 'reason': container.status_reason})
+            raise exception.ResourceInError(status_reason=msg,
+                                            resource_status=container.status)
+        else:
+            msg = (_("Unknown status creating Container '%(name)s' - %(reason)s")
+                   % {'name': self.name, 'reason': container.status_reason})
+            raise exception.ResourceUnknownStatus(status_reason=msg,
+                                                  resource_status=container.status)
 
     def handle_update(self, json_snippet, tmpl_diff, prop_diff):
         if prop_diff:
